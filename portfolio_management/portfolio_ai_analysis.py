@@ -1,26 +1,40 @@
+import re
 import yfinance as yf
 import logging
 from portfolio_management.portfolio_google_sheets import fetch_all_portfolios
 
 logger = logging.getLogger(__name__)
 
-# Lista med kända headersträngar som kan förekomma i Google Sheets-data.
 HEADER_STRINGS = {
     "Aktie/Fond/ETF", "Ticker", "Antal", "Kurs (SEK)", "Värde (SEK)",
     "Typ", "Kategori", "Konto"
 }
 
+def parse_float_str(value_str):
+    """
+    Rensar en sträng från icke-numeriska tecken (förutom punkt och minus)
+    och försöker konvertera till float. T.ex. "$263.55" -> 263.55
+    """
+    s = str(value_str).replace(",", ".")
+    # Behåll endast siffror, punkt och minus
+    s = re.sub(r"[^0-9\.\-]", "", s.strip())
+    if s == "" or s == "." or s == "-" or s == "-.":
+        return 0.0
+    try:
+        return float(s)
+    except:
+        return 0.0
+
 def get_live_stock_info(symbol):
     """
     Hämtar livepris och valuta för en aktie med hjälp av yfinance.
-    
-    Args:
-        symbol (str): Ticker-symbolet (t.ex. "TSLA", "AAPL").
-    
-    Returns:
-        tuple: (price, currency) om lyckat, annars (None, None).
+    Om symbol innehåller 'NASDAQ:' tar vi bort den delen.
     """
     try:
+        # Rensa bort eventuellt 'NASDAQ:'-prefix om det finns
+        if "NASDAQ:" in symbol:
+            symbol = symbol.split(":")[-1].strip()
+
         ticker = yf.Ticker(symbol)
         info = ticker.info
         price = info.get("regularMarketPrice")
@@ -32,63 +46,60 @@ def get_live_stock_info(symbol):
 
 def generate_ai_recommendations():
     """
-    Hämtar portföljdata från Google Sheets via fetch_all_portfolios och genererar AI-rekommendationer
-    baserat på dessa data.
+    Hämtar portföljdata från Google Sheets via fetch_all_portfolios och genererar AI-rekommendationer.
+    Loggar ut debug-info för varje post så att du kan se exakt vad som händer.
     
-    Returnerar:
-        dict: { konto_namn: [ { ...rekommendation... }, ... ], ... }
+    Returnerar en dict: { konto: [ { ... }, ... ], ... }
     """
     portfolios = fetch_all_portfolios()  
     recommendations = {}
 
     for account, stocks in portfolios.items():
+        logger.info(f"Konto '{account}' har {len(stocks)} rader i Google Sheets.")
         recommendations[account] = []
         for stock in stocks:
-            # Om stock inte är en dictionary, hoppa över den utan att logga ett fel.
+            # Logga hela stock-raden för felsökning
+            logger.info(f"[DEBUG] Rå data för konto '{account}': {stock}")
+
+            # Om stock inte är en dictionary – kolla om det är en header och hoppa över
             if not isinstance(stock, dict):
                 if isinstance(stock, str) and stock.strip() in HEADER_STRINGS:
+                    logger.info(f"[DEBUG] Hoppar över header-sträng '{stock}' för konto '{account}'.")
                     continue
                 else:
-                    # Ignorera oväntade format utan att logga fel
+                    logger.error(f"Felaktigt format på stockdata för konto '{account}': {stock}")
                     continue
 
-            # Läs ut name och symbol med flera alternativ (anpassa efter dina kolumnnamn)
+            # 1) Hämta name och symbol
             name = stock.get("name") or stock.get("Namn") or stock.get("Aktie/Fond/ETF") or "Okänt"
             symbol = stock.get("symbol") or stock.get("Ticker") or ""
 
-            # Hämta antal - försök med "antal", "Antal"
+            # 2) Hämta antal och kurs
             antal_str = stock.get("antal") or stock.get("Antal") or "0"
-            # Hämta kurs - försök med "kurs", "Kurs (SEK)"
             kurs_str = stock.get("kurs") or stock.get("Kurs (SEK)") or "0"
 
-            # Parsar antal och kurs som float
-            try:
-                antal = float(str(antal_str).replace(",", "."))
-            except:
-                antal = 0.0
-            try:
-                kurs = float(str(kurs_str).replace(",", "."))
-            except:
-                kurs = 0.0
+            antal = parse_float_str(antal_str)
+            kurs = parse_float_str(kurs_str)
 
-            # Hämta live data (price, currency) via yfinance om symbol finns
+            logger.info(f"[DEBUG] Konto '{account}', rad: name={name}, symbol={symbol}, antal={antal}, kurs={kurs}")
+
+            # 3) Hämta live data (pris, valuta) om symbol finns
             if symbol:
                 price, currency = get_live_stock_info(symbol)
             else:
                 price, currency = None, None
 
-            # Om yfinance inte gav något pris, använd 'kurs' som fallback
+            # Om live data saknas, använd 'kurs'
             if price is None:
                 price = kurs
             if currency is None:
                 currency = "N/A"
 
-            # Räkna ut beräknat värde
-            total_value = 0.0
-            if isinstance(price, (int, float)):
-                total_value = price * antal
+            # 4) Räkna ut totalvärde
+            total_value = price * antal
+            logger.info(f"[DEBUG] => Beräknat pris={price}, valuta={currency}, total_värde={total_value}")
 
-            # Generera en enkel rekommendation – anpassa efter din egen AI-logik
+            # 5) Bygg rekommendationspost
             rec = {
                 "namn": name,
                 "kategori": "Aktie",
@@ -97,7 +108,7 @@ def generate_ai_recommendations():
                 "pris": price,
                 "valuta": currency,
                 "total_värde": total_value,
-                "rekommendation": "Behåll",  # Exempelrekommendation
+                "rekommendation": "Behåll",
                 "motivering": "Baserat på aktuell data rekommenderas att behålla.",
                 "riktkurs_3m": "N/A",
                 "riktkurs_6m": "N/A",
@@ -114,14 +125,7 @@ def generate_ai_recommendations():
 def suggest_new_investments(portfolios):
     """
     Genererar nya investeringsförslag baserat på portföljdata.
-    
-    Args:
-        portfolios (dict): Data från Google Sheets.
-
-    Returnerar:
-        dict: { "Alice": [("Aktie", "Microsoft"), ...], "Valter": [...], ... }
     """
-    # Exempeldata – anpassa efter dina behov eller basera på portfolios
     suggestions = {
         "Alice": [("Aktie", "Microsoft"), ("Aktie", "Google")],
         "Valter": [],
