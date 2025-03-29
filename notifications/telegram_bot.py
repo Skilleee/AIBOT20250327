@@ -10,7 +10,6 @@ from config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 # Konfigurera loggning
 logging.basicConfig(filename="telegram_notifications.log", level=logging.INFO)
 
-# Grundläggande funktion för att skicka meddelanden via Telegram med stöd för reply_markup
 def send_telegram_message(message, reply_markup=None):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -29,7 +28,6 @@ def send_telegram_message(message, reply_markup=None):
         logging.error(f"❌ Fel vid skickning av Telegram-meddelande: {str(e)}")
         return None
 
-# Funktion för att skicka AI-rekommendationer med utökad information och inline-knapp för dashboard
 def send_ai_recommendations():
     try:
         recommendations = generate_ai_recommendations()
@@ -38,7 +36,6 @@ def send_ai_recommendations():
         
         for konto, innehav in recommendations.items():
             message += f"\n *{konto}*\n"
-            # Om 'innehav' är en lista
             if isinstance(innehav, list):
                 for post in innehav:
                     if isinstance(post, dict):
@@ -46,6 +43,7 @@ def send_ai_recommendations():
                             namn = post.get("namn", "Okänt")
                             kategori = post.get("kategori", "Okänt")
                             värde = post.get("värde", "N/A")
+                            valuta = post.get("valuta", "")
                             rek = post.get("rekommendation", "")
                             motivering = post.get("motivering", "")
                             riktkurs_3m = post.get("riktkurs_3m", "N/A")
@@ -56,7 +54,7 @@ def send_ai_recommendations():
                             riskbedomning = post.get("riskbedomning", "N/A")
                             historisk_prestanda = post.get("historisk_prestanda", "N/A")
                             
-                            message += f"• `{namn}` ({kategori}, {värde} kr): *{rek}*"
+                            message += f"• `{namn}` ({kategori}, {värde} {valuta}): *{rek}*"
                             if motivering:
                                 message += f" – {motivering}"
                             message += (
@@ -69,7 +67,6 @@ def send_ai_recommendations():
                             message += f"• Fel vid läsning av rekommendation: {post} ({str(e)})\n"
                     else:
                         message += f"• {post}\n"
-            # Om 'innehav' är en dictionary
             elif isinstance(innehav, dict):
                 for key, post in innehav.items():
                     if isinstance(post, dict):
@@ -77,6 +74,7 @@ def send_ai_recommendations():
                             namn = post.get("namn", "Okänt")
                             kategori = post.get("kategori", "Okänt")
                             värde = post.get("värde", "N/A")
+                            valuta = post.get("valuta", "")
                             rek = post.get("rekommendation", "")
                             motivering = post.get("motivering", "")
                             riktkurs_3m = post.get("riktkurs_3m", "N/A")
@@ -87,7 +85,7 @@ def send_ai_recommendations():
                             riskbedomning = post.get("riskbedomning", "N/A")
                             historisk_prestanda = post.get("historisk_prestanda", "N/A")
                             
-                            message += f"• `{namn}` ({kategori}, {värde} kr): *{rek}*"
+                            message += f"• `{namn}` ({kategori}, {värde} {valuta}): *{rek}*"
                             if motivering:
                                 message += f" – {motivering}"
                             message += (
@@ -114,7 +112,6 @@ def send_ai_recommendations():
             else:
                 message += f"• {forslag}\n"
         
-        # Exempel på inline-knapp som öppnar en dashboard
         reply_markup = {
             "inline_keyboard": [
                 [{"text": "Öppna Dashboard", "url": "https://example.com/dashboard"}]
@@ -205,7 +202,6 @@ def send_rl_backtest_summary(reward, final_value):
         logging.error(f"❌ Fel vid skickning av RL-backtestresultat: {str(e)}")
 
 if __name__ == "__main__":
-    # Exempeldata för testkörning
     market_data = {
         "sp500": 1.2,
         "nasdaq": 0.8,
@@ -223,7 +219,6 @@ if __name__ == "__main__":
     send_ai_recommendations()
     send_rl_backtest_summary(12543.21, 108769.56)
     
-    # Bygg ett dynamiskt filnamn baserat på dagens datum (ex: reports/daily_report_2025-03-29.pdf)
     today = datetime.today().strftime("%Y-%m-%d")
     file_path = f"reports/daily_report_{today}.pdf"
     send_pdf_report_to_telegram(file_path)
