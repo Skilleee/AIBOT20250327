@@ -11,6 +11,9 @@ from config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 logging.basicConfig(filename="telegram_notifications.log", level=logging.INFO)
 
 def send_telegram_message(message, reply_markup=None):
+    """
+    Skickar ett meddelande via Telegram.
+    """
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         data = {
@@ -29,6 +32,9 @@ def send_telegram_message(message, reply_markup=None):
         return None
 
 def send_ai_recommendations():
+    """
+    Hämtar AI-rekommendationer och nya investeringsförslag och skickar dem som ett Telegram-meddelande.
+    """
     try:
         recommendations = generate_ai_recommendations()
         new_suggestions = suggest_new_investments(fetch_all_portfolios())
@@ -219,6 +225,7 @@ if __name__ == "__main__":
     send_ai_recommendations()
     send_rl_backtest_summary(12543.21, 108769.56)
     
+    # Dynamiskt filnamn baserat på dagens datum (ex: reports/daily_report_2025-03-29.pdf)
     today = datetime.today().strftime("%Y-%m-%d")
     file_path = f"reports/daily_report_{today}.pdf"
     send_pdf_report_to_telegram(file_path)
