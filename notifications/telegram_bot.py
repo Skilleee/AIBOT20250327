@@ -1,14 +1,25 @@
+# notifications/telegram_bot.py
+
 import logging
 from datetime import datetime
 import json
+import os
 import requests
 
+# Behåll AI-importerna om du fortfarande vill använda dem
 from portfolio_management.portfolio_ai_analysis import (
     generate_ai_recommendations,
     suggest_new_investments,
 )
-from portfolio_management.portfolio_google_sheets import fetch_all_portfolios
-from config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+
+# === VIKTIG ÄNDRING: importera från "scripts.fetch_data" istället för "portfolio_google_sheets"
+from scripts.fetch_data import fetch_all_portfolios
+
+# Om du vill läsa in tokens/ID från .env:
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID")  # Se till att denna finns
+JSON_KEYFILE_PATH = "/home/rlundkvist87/secrets/service_account.json"
 
 logging.basicConfig(filename="telegram_notifications.log", level=logging.INFO)
 
@@ -17,6 +28,10 @@ def send_telegram_message(message, reply_markup=None):
     Skickar ett meddelande via Telegram med valfri inline-knapp.
     """
     try:
+        if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+            logging.error("Saknar TELEGRAM_BOT_TOKEN eller TELEGRAM_CHAT_ID i miljövariabler.")
+            return None
+
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         data = {
             "chat_id": TELEGRAM_CHAT_ID,
@@ -38,6 +53,10 @@ def send_pdf_report_to_telegram(file_path):
     Skickar en PDF-rapport som bilaga via Telegram.
     """
     try:
+        if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+            logging.error("Saknar TELEGRAM_BOT_TOKEN eller TELEGRAM_CHAT_ID i miljövariabler.")
+            return False
+
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
         with open(file_path, "rb") as pdf_file:
             files = {"document": pdf_file}
@@ -58,6 +77,10 @@ def send_chart_to_telegram(image_path, caption="Entry/Exit-graf"):
     Skickar ett diagram som bild via Telegram.
     """
     try:
+        if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+            logging.error("Saknar TELEGRAM_BOT_TOKEN eller TELEGRAM_CHAT_ID i miljövariabler.")
+            return False
+
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
         with open(image_path, "rb") as img:
             files = {"photo": img}
@@ -76,8 +99,9 @@ def send_full_daily_report(market_data, risk_level, macro_event):
       - Marknadsrapport
       - Riskvarning
       - Portföljöversikt (per konto)
-      - AI-rekommendationer
-      - Nya investeringsförslag
+      - AI-rekommendationer (om du vill)
+      - Nya investeringsförslag (om du vill)
+      - Makrohändelse
     """
     try:
         # 1) Daglig marknadsrapport
@@ -97,21 +121,31 @@ def send_full_daily_report(market_data, risk_level, macro_event):
                 f"Risknivå: *{risk_level:.2%}*. Överväg att minska exponering.\n"
             )
 
-        # 3) Hämta AI-rekommendationer & nya investeringsförslag
+        # 3) Hämta AI-rekommendationer (om du vill behålla AI-delen)
         recommendations = generate_ai_recommendations()
-        portfolios = fetch_all_portfolios()
+
+        # 4) Hämta portföljerna (från nya fetch_data.py)
+        #    - Samma rad som förr, men nu från scripts.fetch_data
+        if not GOOGLE_SHEET_ID:
+            logging.error("Saknar 'GOOGLE_SHEET_ID' i miljövariabler/.env")
+            return
+        portfolios = fetch_all_portfolios(JSON_KEYFILE_PATH, GOOGLE_SHEET_ID)
+
+        # 5) Få nya investeringsförslag (om du vill behålla AI-delen)
         new_suggestions = suggest_new_investments(portfolios)
 
-        # 4) Sammanfatta portföljvärden per konto + AI-rekommendationer
+        # 6) Sammanfatta portföljvärden + AI-rekommendationer
         portfolio_msg = "*Portföljöversikt & Rekommendationer*\n"
         for account, recs in recommendations.items():
-            # Beräkna totalvärde
-            total_konto = 0
+            # Beräkna totalvärde från recs eller från portfolios
+            # (Beroende på hur du vill göra. Nedan ett enkelt exempel:)
+            total_konto = 0.0
             for r in recs:
                 val = r.get("total_värde", 0)
                 if isinstance(val, (int, float)):
                     total_konto += val
 
+            # Skriv ut info
             portfolio_msg += f"\n*{account}*\n"
             portfolio_msg += f"Totalt värde (estimerat): {total_konto:,.2f} SEK\n"
             for r in recs:
@@ -129,7 +163,7 @@ def send_full_daily_report(market_data, risk_level, macro_event):
                 )
             portfolio_msg += "\n"
 
-        # 5) Föreslagna nya investeringar
+        # 7) Föreslagna nya investeringar
         invest_msg = "*Föreslagna nya investeringar:*\n"
         for account, forslag in new_suggestions.items():
             invest_msg += f"\n*{account}:*\n"
@@ -139,10 +173,10 @@ def send_full_daily_report(market_data, risk_level, macro_event):
             else:
                 invest_msg += "• (Inga förslag)\n"
 
-        # 6) Makrohändelse
+        # 8) Makrohändelse
         macro_msg = f"\n*Makrohändelse:* {macro_event}\n"
 
-        # 7) Slå ihop all text till ett meddelande
+        # 9) Slå ihop all text
         full_message = (
             f"{market_summary}"
             f"{risk_msg}"
@@ -151,31 +185,21 @@ def send_full_daily_report(market_data, risk_level, macro_event):
             f"{macro_msg}"
         )
 
-        # 8) Lägg till inline-knapp (exempel: Dashboard)
+        # 10) Inline-knapp (exempel)
         reply_markup = {
             "inline_keyboard": [
                 [{"text": "Öppna Dashboard", "url": "https://example.com/dashboard"}]
             ]
         }
 
+        # 11) Skicka meddelande
         send_telegram_message(full_message, reply_markup=reply_markup)
+
     except Exception as e:
         logging.error(f"❌ Fel vid skapande av full daily report: {str(e)}")
 
-# Nedan är de gamla funktionerna om du fortfarande vill använda dem separat
-def send_daily_market_report(market_data):
-    ...
-def send_risk_alert(risk_level):
-    ...
-def send_portfolio_update(portfolio_data):
-    ...
-def send_macro_event_alert(event):
-    ...
-def send_rl_backtest_summary(reward, final_value):
-    ...
-
-if __name__ == "__main__":
-    # Exempeldata för testkörning
+def main():
+    # Exempeldata för manuell testkörning
     market_data = {
         "sp500": 1.2,
         "nasdaq": 0.8,
@@ -185,10 +209,12 @@ if __name__ == "__main__":
     risk_level = 0.06
     macro_event = "Fed höjde räntan med 0.25%."
 
-    # Anropa vår nya funktion
     send_full_daily_report(market_data, risk_level, macro_event)
 
-    # Skicka PDF om du vill
+    # Om du vill skicka PDF därefter
     today = datetime.today().strftime("%Y-%m-%d")
     file_path = f"reports/daily_report_{today}.pdf"
     send_pdf_report_to_telegram(file_path)
+
+if __name__ == "__main__":
+    main()
