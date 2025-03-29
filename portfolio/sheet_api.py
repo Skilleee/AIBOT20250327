@@ -1,6 +1,4 @@
 import logging
-
-import google.auth
 from googleapiclient.discovery import build
 
 logger = logging.getLogger(__name__)
@@ -12,7 +10,7 @@ def read_portfolio_data_from_sheets(service, sheet_id, account_name):
     Första raden är header-raden.
     """
     sheet = service.spreadsheets()
-    # Justera kolumn-intervall om du har fler kolumner än H
+    # Justera kolumnintervallet om du har fler kolumner än H (t.ex. "A1:I" om du har 9 kolumner)
     range_name = f"{account_name}!A1:H"
     result = sheet.values().get(spreadsheetId=sheet_id, range=range_name).execute()
     data = result.get("values", [])
