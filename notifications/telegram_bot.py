@@ -187,5 +187,7 @@ if __name__ == "__main__":
     send_ai_recommendations()
     send_rl_backtest_summary(12543.21, 108769.56)
     
-    # Se till att filen finns, annars kommentera ut denna rad under testning
-    send_pdf_report_to_telegram("reports/daily_report.pdf")
+    # Bygg ett dynamiskt filnamn baserat på dagens datum
+    today = datetime.today().strftime("%Y-%m-%d")
+    file_path = f"reports/daily_report_{today}.pdf"
+    send_pdf_report_to_telegram(file_path)
