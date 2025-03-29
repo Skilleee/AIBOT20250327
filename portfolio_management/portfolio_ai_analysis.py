@@ -4,6 +4,9 @@ from portfolio_management.portfolio_google_sheets import fetch_all_portfolios
 
 logger = logging.getLogger(__name__)
 
+# Lista med kända headersträngar som kan förekomma i Google Sheets-data.
+HEADER_STRINGS = {"Aktie/Fond/ETF", "Ticker", "Antal", "Kurs (SEK)", "Värde (SEK)", "Typ", "Kategori", "Konto"}
+
 def get_live_stock_info(symbol):
     """
     Hämtar livepris och valuta för en aktie med hjälp av yfinance.
@@ -30,27 +33,32 @@ def generate_ai_recommendations():
     baserat på dessa data.
     
     Returnerar:
-        dict: Nycklarna är kontonamn (ex. "Alice", "Valter", "Pension", "Investeringskonto") och värdet är en lista
+        dict: Nycklarna är kontonamn (t.ex. "Alice", "Valter", "Pension", "Investeringskonto") och värdet är en lista
               med dictionaries med rekommendationer för varje aktie.
     """
-    portfolios = fetch_all_portfolios()  # Exempelvis: { "Alice": [ {...}, {...} ], "Valter": [...], ... }
+    portfolios = fetch_all_portfolios()  # Exempelvis: { "Alice": [ {...}, {...} ], "Valter": [ ... ], ... }
     recommendations = {}
 
     for account, stocks in portfolios.items():
         recommendations[account] = []
         for stock in stocks:
-            # Kontrollera att stock är en dictionary
+            # Om stock inte är en dictionary – kontrollera om det är en headerrad och hoppa över den.
             if not isinstance(stock, dict):
-                logger.error(f"Felaktigt format på stockdata för konto '{account}': {stock}")
-                continue  # Hoppa över objektet om det inte är ett dict
-            name = stock.get("name", "Okänt")
-            symbol = stock.get("symbol", "")
+                if isinstance(stock, str) and stock.strip() in HEADER_STRINGS:
+                    continue  # Ignorera headersträngar
+                else:
+                    logger.error(f"Felaktigt format på stockdata för konto '{account}': {stock}")
+                    continue
+            # Mappa kolumnnamn. Försök först med förväntade nycklar; om de saknas, försök med alternativa.
+            name = stock.get("name") or stock.get("Namn") or stock.get("Aktie/Fond/ETF") or "Okänt"
+            # För ticker, försök med "symbol" eller "Ticker"
+            symbol = stock.get("symbol") or stock.get("Ticker") or ""
             if symbol:
                 price, currency = get_live_stock_info(symbol)
             else:
                 price, currency = "N/A", "N/A"
 
-            # Generera en enkel rekommendation – här kan du lägga till mer avancerad logik
+            # Skapa en enkel rekommendation – här kan du anpassa logiken efter behov
             rec = {
                 "namn": name,
                 "kategori": "Aktie",
