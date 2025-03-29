@@ -38,38 +38,81 @@ def send_ai_recommendations():
         
         for konto, innehav in recommendations.items():
             message += f"\n *{konto}*\n"
-            for post in innehav:
-                # Säkerställ att vi arbetar med en dictionary
-                if isinstance(post, dict):
-                    namn = post.get("namn", "Okänt")
-                    kategori = post.get("kategori", "Okänt")
-                    värde = post.get("värde", "N/A")
-                    rek = post.get("rekommendation", "")
-                    motivering = post.get("motivering", "")
-                    riktkurs_3m = post.get("riktkurs_3m", "N/A")
-                    riktkurs_6m = post.get("riktkurs_6m", "N/A")
-                    riktkurs_12m = post.get("riktkurs_12m", "N/A")
-                    pe_ratio = post.get("pe_ratio", "N/A")
-                    rsi = post.get("rsi", "N/A")
-                    riskbedomning = post.get("riskbedomning", "N/A")
-                    historisk_prestanda = post.get("historisk_prestanda", "N/A")
-                    
-                    message += f"• `{namn}` ({kategori}, {värde} kr): *{rek}*"
-                    if motivering:
-                        message += f" – {motivering}"
-                    message += f"\n  Riktkurser: 3 mån: {riktkurs_3m}, 6 mån: {riktkurs_6m}, 12 mån: {riktkurs_12m}\n"
-                    message += f"  PE-tal: {pe_ratio}, RSI: {rsi}, Riskbedömning: {riskbedomning}\n"
-                    message += f"  Historisk Prestanda: {historisk_prestanda}\n"
-                    message += f"  Länkar: [Visa historik](https://example.com/historik/{namn}), [Mer info](https://example.com/info/{namn})\n\n"
-                else:
-                    # Om post inte är en dictionary läggs den bara till som text
-                    message += f"• {post}\n"
-        
+            # Om 'innehav' är en lista
+            if isinstance(innehav, list):
+                for post in innehav:
+                    if isinstance(post, dict):
+                        try:
+                            namn = post.get("namn", "Okänt")
+                            kategori = post.get("kategori", "Okänt")
+                            värde = post.get("värde", "N/A")
+                            rek = post.get("rekommendation", "")
+                            motivering = post.get("motivering", "")
+                            riktkurs_3m = post.get("riktkurs_3m", "N/A")
+                            riktkurs_6m = post.get("riktkurs_6m", "N/A")
+                            riktkurs_12m = post.get("riktkurs_12m", "N/A")
+                            pe_ratio = post.get("pe_ratio", "N/A")
+                            rsi = post.get("rsi", "N/A")
+                            riskbedomning = post.get("riskbedomning", "N/A")
+                            historisk_prestanda = post.get("historisk_prestanda", "N/A")
+                            
+                            message += f"• `{namn}` ({kategori}, {värde} kr): *{rek}*"
+                            if motivering:
+                                message += f" – {motivering}"
+                            message += (
+                                f"\n  Riktkurser: 3 mån: {riktkurs_3m}, 6 mån: {riktkurs_6m}, 12 mån: {riktkurs_12m}\n"
+                                f"  PE-tal: {pe_ratio}, RSI: {rsi}, Riskbedömning: {riskbedomning}\n"
+                                f"  Historisk Prestanda: {historisk_prestanda}\n"
+                                f"  Länkar: [Visa historik](https://example.com/historik/{namn}), [Mer info](https://example.com/info/{namn})\n\n"
+                            )
+                        except Exception as e:
+                            message += f"• Fel vid läsning av rekommendation: {post} ({str(e)})\n"
+                    else:
+                        message += f"• {post}\n"
+            # Om 'innehav' är en dictionary
+            elif isinstance(innehav, dict):
+                for key, post in innehav.items():
+                    if isinstance(post, dict):
+                        try:
+                            namn = post.get("namn", "Okänt")
+                            kategori = post.get("kategori", "Okänt")
+                            värde = post.get("värde", "N/A")
+                            rek = post.get("rekommendation", "")
+                            motivering = post.get("motivering", "")
+                            riktkurs_3m = post.get("riktkurs_3m", "N/A")
+                            riktkurs_6m = post.get("riktkurs_6m", "N/A")
+                            riktkurs_12m = post.get("riktkurs_12m", "N/A")
+                            pe_ratio = post.get("pe_ratio", "N/A")
+                            rsi = post.get("rsi", "N/A")
+                            riskbedomning = post.get("riskbedomning", "N/A")
+                            historisk_prestanda = post.get("historisk_prestanda", "N/A")
+                            
+                            message += f"• `{namn}` ({kategori}, {värde} kr): *{rek}*"
+                            if motivering:
+                                message += f" – {motivering}"
+                            message += (
+                                f"\n  Riktkurser: 3 mån: {riktkurs_3m}, 6 mån: {riktkurs_6m}, 12 mån: {riktkurs_12m}\n"
+                                f"  PE-tal: {pe_ratio}, RSI: {rsi}, Riskbedömning: {riskbedomning}\n"
+                                f"  Historisk Prestanda: {historisk_prestanda}\n"
+                                f"  Länkar: [Visa historik](https://example.com/historik/{namn}), [Mer info](https://example.com/info/{namn})\n\n"
+                            )
+                        except Exception as e:
+                            message += f"• Fel vid läsning av rekommendation: {post} ({str(e)})\n"
+                    else:
+                        message += f"• {post}\n"
+            elif isinstance(innehav, str):
+                message += f"• {innehav}\n"
+            else:
+                message += f"• {str(innehav)}\n"
+                
         message += "\n *Föreslagna nya investeringar:*\n"
-        for konto, förslag in new_suggestions.items():
+        for konto, forslag in new_suggestions.items():
             message += f"\n *{konto}*\n"
-            for kategori, namn in förslag:
-                message += f"• `{namn}` – {kategori}\n"
+            if isinstance(forslag, list):
+                for kategori, namn in forslag:
+                    message += f"• `{namn}` – {kategori}\n"
+            else:
+                message += f"• {forslag}\n"
         
         # Exempel på inline-knapp som öppnar en dashboard
         reply_markup = {
@@ -82,7 +125,6 @@ def send_ai_recommendations():
     except Exception as e:
         logging.error(f"❌ Fel vid AI-rekommendationer: {str(e)}")
 
-# Funktion för att skicka en PDF-rapport som bilaga
 def send_pdf_report_to_telegram(file_path):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
@@ -100,7 +142,6 @@ def send_pdf_report_to_telegram(file_path):
         logging.error(f"❌ Fel vid skickning av PDF-rapport: {str(e)}")
         return False
 
-# Funktion för att skicka ett diagram som bild
 def send_chart_to_telegram(image_path, caption="Entry/Exit-graf"):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -115,7 +156,6 @@ def send_chart_to_telegram(image_path, caption="Entry/Exit-graf"):
         logging.error(f"❌ Fel vid skickning av diagram till Telegram: {str(e)}")
         return False
 
-# Funktion för att skicka en daglig marknadsrapport
 def send_daily_market_report(market_data):
     try:
         summary = (
@@ -129,7 +169,6 @@ def send_daily_market_report(market_data):
     except Exception as e:
         logging.error(f"❌ Fel vid marknadsrapport: {str(e)}")
 
-# Funktion för att skicka en riskvarning vid hög volatilitet
 def send_risk_alert(risk_level):
     try:
         if risk_level > 0.05:
@@ -138,7 +177,6 @@ def send_risk_alert(risk_level):
     except Exception as e:
         logging.error(f"❌ Fel vid riskvarning: {str(e)}")
 
-# Funktion för att skicka portföljuppdatering
 def send_portfolio_update(portfolio_data):
     try:
         message = " *Portföljuppdatering:*\n"
@@ -148,7 +186,6 @@ def send_portfolio_update(portfolio_data):
     except Exception as e:
         logging.error(f"❌ Fel vid portföljnotis: {str(e)}")
 
-# Funktion för att skicka makrohändelser
 def send_macro_event_alert(event):
     try:
         message = f" *Makrohändelse:* {event}"
@@ -156,7 +193,6 @@ def send_macro_event_alert(event):
     except Exception as e:
         logging.error(f"❌ Fel vid makronotis: {str(e)}")
 
-# Funktion för att skicka en sammanfattning efter RL-backtest
 def send_rl_backtest_summary(reward, final_value):
     try:
         message = (
@@ -187,7 +223,7 @@ if __name__ == "__main__":
     send_ai_recommendations()
     send_rl_backtest_summary(12543.21, 108769.56)
     
-    # Bygg ett dynamiskt filnamn baserat på dagens datum
+    # Bygg ett dynamiskt filnamn baserat på dagens datum (ex: reports/daily_report_2025-03-29.pdf)
     today = datetime.today().strftime("%Y-%m-%d")
     file_path = f"reports/daily_report_{today}.pdf"
     send_pdf_report_to_telegram(file_path)
