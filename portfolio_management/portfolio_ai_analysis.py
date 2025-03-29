@@ -1,5 +1,8 @@
 import yfinance as yf
+import logging
 from portfolio_management.portfolio_google_sheets import fetch_all_portfolios
+
+logger = logging.getLogger(__name__)
 
 def get_live_stock_info(symbol):
     """
@@ -18,6 +21,7 @@ def get_live_stock_info(symbol):
         currency = info.get("currency")
         return price, currency
     except Exception as e:
+        logger.error(f"Fel vid hämtning av live data för {symbol}: {str(e)}")
         return None, None
 
 def generate_ai_recommendations():
@@ -29,15 +33,16 @@ def generate_ai_recommendations():
         dict: Nycklarna är kontonamn (ex. "Alice", "Valter", "Pension", "Investeringskonto") och värdet är en lista
               med dictionaries med rekommendationer för varje aktie.
     """
-    # Hämta portföljdata från Google Sheets
-    portfolios = fetch_all_portfolios()  # Exempelvis: { "Alice": [ {...}, {...} ], "Valter": [ ... ], ... }
+    portfolios = fetch_all_portfolios()  # Exempelvis: { "Alice": [ {...}, {...} ], "Valter": [...], ... }
     recommendations = {}
 
-    # Iterera över varje konto och generera rekommendationer för varje aktie
     for account, stocks in portfolios.items():
         recommendations[account] = []
         for stock in stocks:
-            # Förvänta att stock är en dictionary med åtminstone "name" och "symbol"
+            # Kontrollera att stock är en dictionary
+            if not isinstance(stock, dict):
+                logger.error(f"Felaktigt format på stockdata för konto '{account}': {stock}")
+                continue  # Hoppa över objektet om det inte är ett dict
             name = stock.get("name", "Okänt")
             symbol = stock.get("symbol", "")
             if symbol:
@@ -45,14 +50,14 @@ def generate_ai_recommendations():
             else:
                 price, currency = "N/A", "N/A"
 
-            # Generera en enkel rekommendation (du kan lägga till mer avancerad logik)
+            # Generera en enkel rekommendation – här kan du lägga till mer avancerad logik
             rec = {
                 "namn": name,
                 "kategori": "Aktie",
                 "symbol": symbol,
                 "värde": price,
                 "valuta": currency,
-                "rekommendation": "Behåll",  # Exempelrekommendation – anpassa efter din logik
+                "rekommendation": "Behåll",  # Exempelrekommendation
                 "motivering": "Baserat på aktuell data rekommenderas att behålla.",
                 "riktkurs_3m": "N/A",
                 "riktkurs_6m": "N/A",
@@ -75,7 +80,7 @@ def suggest_new_investments(portfolios):
     Returnerar:
         dict: Nycklarna är kontonamn och värdet är en lista med tuples (kategori, namn) med investeringsförslag.
     """
-    # Exempeldata – anpassa om du vill använda dynamisk logik baserat på portföljdata
+    # Exempeldata – anpassa efter dina behov
     suggestions = {
         "Alice": [("Aktie", "Microsoft"), ("Aktie", "Google")],
         "Valter": [],
