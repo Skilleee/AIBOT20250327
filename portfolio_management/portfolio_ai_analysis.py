@@ -1,91 +1,69 @@
-import logging
-from datetime import datetime
-from portfolio_management.portfolio_google_sheets import fetch_all_portfolios
-
-# Strategier per konto
-ACCOUNT_STRATEGIES = {
-    "Alice": {"horizon": 20, "risk": "medium-high"},
-    "Valter": {"horizon": 20, "risk": "medium-high"},
-    "Pension": {"horizon": 30, "risk": "low-medium"},
-    "Investeringskonto": {"horizon": 10, "risk": "high"},
-}
-
-HIGH_GROWTH_CATEGORIES = ["AI", "Teknik", "Blockchain", "Kryptovaluta"]
-DEFENSIVE_CATEGORIES = ["Global", "Tillväxtmarknad", "Hälsovård"]
-
-# Förslag på investeringar som kan användas i olika konton
-SUGGESTED_INVESTMENTS = {
-    "AI": ["SEB AI - Artificial Intelligence C SEK", "iShares Robotics & AI ETF"],
-    "Teknik": ["Swedbank Robur Technology", "Invesco Nasdaq 100 ETF"],
-    "Global": ["Avanza Global", "Länsförsäkringar Global Indexnära"],
-    "Tillväxtmarknad": ["Länsförsäkringar Tillväxtmarknad", "Swedbank Robur EM"],
-    "Hälsovård": ["Swedbank Robur Healthcare", "iShares Healthcare ETF"],
-    "Kryptovaluta": ["Bitcoin Zero SEK", "Ethereum Tracker EUR XBT"],
-}
-
-logging.basicConfig(filename="ai_trading_bot.log", level=logging.INFO)
-
-def analyze_asset(row, strategy):
-    kategori = row.get("Kategori")
-    värde = row.get("Värde (SEK)", 0)
-    if not kategori or not isinstance(värde, (int, float)):
-        return "⚠️ Saknar data"
-
-    offensiv = kategori in HIGH_GROWTH_CATEGORIES
-    defensiv = kategori in DEFENSIVE_CATEGORIES
-
-    if strategy["risk"] == "high":
-        return "📈 Köp mer" if offensiv else "🤝 Behåll" if defensiv else "📉 Sälj"
-    elif strategy["risk"] == "medium-high":
-        if offensiv and värde < 1000:
-            return "📈 Köp mer"
-        elif defensiv:
-            return "🤝 Behåll"
-        else:
-            return "📉 Sälj"
-    elif strategy["risk"] == "low-medium":
-        return "🤝 Behåll" if defensiv else "📉 Sälj" if offensiv else "🤷 Osäker"
-    return "🤷 Osäker"
+# portfolio_management/portfolio_ai_analysis.py
 
 def generate_ai_recommendations():
-    portfolio = fetch_all_portfolios()
-    recommendations = {}
-
-    for account, rows in portfolio.items():
-        strategy = ACCOUNT_STRATEGIES.get(account, {})
-        account_recs = []
-
-        for row in rows:
-            namn = row.get("Aktie/Fond/ETF", "Okänd")
-            kategori = row.get("Kategori", "Okänd")
-            värde = row.get("Värde (SEK)", 0)
-            rekommendation = analyze_asset(row, strategy)
-
-            account_recs.append({
-                "namn": namn,
-                "kategori": kategori,
-                "värde": värde,
-                "rekommendation": rekommendation,
-            })
-
-        recommendations[account] = account_recs
-
-    logging.info(f"[{datetime.now()}] 🧠 AI-genererade rekommendationer")
+    """
+    Returnerar en dictionary med kontonamn som nycklar och en lista av
+    rekommendations-dictionaries som värden.
+    """
+    # Exempeldata – ersätt med din faktiska modell och datainsamling
+    recommendations = {
+        "Huvudkonto": [
+            {
+                "namn": "Tesla",
+                "kategori": "Aktie",
+                "värde": 850,
+                "rekommendation": "Köp",
+                "motivering": "Stark uppåttrend, hög volym.",
+                "riktkurs_3m": "900 kr",
+                "riktkurs_6m": "950 kr",
+                "riktkurs_12m": "1100 kr",
+                "pe_ratio": "N/A",
+                "rsi": "N/A",
+                "riskbedomning": "Låg",
+                "historisk_prestanda": "Positiv"
+            },
+            {
+                "namn": "Spotify",
+                "kategori": "Aktie",
+                "värde": 120,
+                "rekommendation": "Behåll",
+                "motivering": "Stabil efterfrågan, långsiktig tillväxt.",
+                "riktkurs_3m": "125 kr",
+                "riktkurs_6m": "130 kr",
+                "riktkurs_12m": "140 kr",
+                "pe_ratio": "N/A",
+                "rsi": "N/A",
+                "riskbedomning": "Medium",
+                "historisk_prestanda": "Stabil"
+            }
+        ],
+        "Pensionskonto": [
+            {
+                "namn": "Apple",
+                "kategori": "Aktie",
+                "värde": 155,
+                "rekommendation": "Sälj",
+                "motivering": "Överköpt, risk för korrigering.",
+                "riktkurs_3m": "150 kr",
+                "riktkurs_6m": "145 kr",
+                "riktkurs_12m": "135 kr",
+                "pe_ratio": "N/A",
+                "rsi": "N/A",
+                "riskbedomning": "Hög",
+                "historisk_prestanda": "Negativ"
+            }
+        ]
+    }
     return recommendations
 
-def suggest_new_investments(portfolio_data):
-    suggestions = {}
-
-    for account, rows in portfolio_data.items():
-        owned_categories = set(row.get("Kategori") for row in rows if row.get("Kategori"))
-        strategy = ACCOUNT_STRATEGIES.get(account, {})
-        account_suggestions = []
-
-        for category, candidates in SUGGESTED_INVESTMENTS.items():
-            if category not in owned_categories:
-                if strategy["risk"] == "high" or (strategy["risk"] == "medium-high" and category != "Kryptovaluta"):
-                    account_suggestions.append((category, candidates[0]))
-
-        suggestions[account] = account_suggestions
-
+def suggest_new_investments(portfolios):
+    """
+    Returnerar en dictionary med kontonamn som nycklar och en lista av
+    tuple (kategori, namn) med nya investeringsförslag.
+    """
+    # Exempeldata – ersätt med logik baserat på faktiska portföljdata
+    suggestions = {
+        "Huvudkonto": [("Aktie", "Microsoft"), ("Aktie", "Google")],
+        "Pensionskonto": [("Aktie", "Amazon")]
+    }
     return suggestions
