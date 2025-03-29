@@ -5,7 +5,7 @@ logger = logging.getLogger(__name__)
 
 def parse_portfolio_data(raw_data, account_name):
     """
-    Tar in rådata (inkl. header-raden) och returnerar en lista av dictar
+    Tar in rådata (inklusive header-raden) och returnerar en lista av dictar
     med nycklar för instrument, ticker, antal, kurs, värde, typ, kategori och konto.
     """
     portfolio_data = []
@@ -22,7 +22,7 @@ def parse_portfolio_data(raw_data, account_name):
         try:
             instrument_name = row[0]
             ticker = row[1]
-            shares = float(row[2].replace(",", "."))  # Om du har svenska kommatecken
+            shares = float(row[2].replace(",", "."))  # Hanterar svenska kommatecken
             price = float(row[3].replace(",", "."))
             value = float(row[4].replace(",", "."))
             instrument_type = row[5]
@@ -47,20 +47,17 @@ def parse_portfolio_data(raw_data, account_name):
 
     return portfolio_data
 
-
 def read_all_portfolios(service, sheet_id, accounts):
     """
-    Läser in portföljdata för en lista av konton (t.ex. ["Alice", "Valter", "Pension", ...])
-    och returnerar en gemensam lista av parsed data.
+    Läser in portföljdata för en lista av konton (t.ex. ["Alice", "Valter", "Pension", "Investeringskonto"])
+    och returnerar en gemensam lista med parsed data.
     """
     all_data = []
     for account in accounts:
         raw_data = read_portfolio_data_from_sheets(service, sheet_id, account)
         parsed_data = parse_portfolio_data(raw_data, account)
         all_data.extend(parsed_data)
-
     return all_data
-
 
 def calculate_total_portfolio_value_by_account(portfolio_data):
     """
@@ -74,7 +71,5 @@ def calculate_total_portfolio_value_by_account(portfolio_data):
     total_values_by_account = {}
     for item in portfolio_data:
         account = item["account"]
-        total_values_by_account[account] = (
-            total_values_by_account.get(account, 0.0) + item["value"]
-        )
+        total_values_by_account[account] = total_values_by_account.get(account, 0.0) + item["value"]
     return total_values_by_account
