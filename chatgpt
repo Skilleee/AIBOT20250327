@@ -1,0 +1,155 @@
+import openai
+import os
+import re
+from pathlib import Path
+import difflib
+from collections import defaultdict
+
+# API-nyckel
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    print("Du måste exportera OPENAI_API_KEY innan du kör.")
+    exit(1)
+
+openai.api_key = api_key
+
+project_root = Path(".")
+
+# Tillåtna filtyper
+allowed_extensions = {
+    ".py", ".txt", ".json", ".csv", ".md", ".html", ".xml", ".zip",
+    ".yaml", ".yml", ".cfg", ".ini", ".toml", ".js", ".ts", ".css",
+    ".env", ".sh", ".bat"
+}
+
+# Hämta alla relevanta filer
+all_files = [
+    f for f in project_root.rglob("*")
+    if f.is_file()
+    and f.suffix in allowed_extensions
+    and "venv" not in f.parts
+    and "__pycache__" not in f.parts
+    and "backups" not in f.parts
+    and not f.name.endswith(".bak")
+    and not f.name.endswith(".backup")
+    and not f.name.endswith(".bak.py")
+    and not f.name.endswith(".py.bak")
+    and not f.name.startswith("~")
+    and not f.name.startswith(".")
+]
+
+# Bygg beroendekarta för .py-filer
+file_imports = defaultdict(set)
+file_contents = {}
+
+for f in all_files:
+    try:
+        content = f.read_text(errors="ignore")
+        file_contents[f] = content
+        if f.suffix == ".py":
+            imports = re.findall(r'^\s*(?:from|import)\s+([\w_\.]+)', content, re.MULTILINE)
+            for imp in imports:
+                imp_base = imp.split('.')[0]
+                for other in all_files:
+                    if other.stem == imp_base and other != f:
+                        file_imports[f].add(other)
+    except Exception as e:
+        print(f"Misslyckades läsa {f}: {e}")
+
+# Gruppera beroenden
+visited = set()
+groups = []
+
+def dfs(file, group):
+    if file in visited:
+        return
+    visited.add(file)
+    group.add(file)
+    for dep in file_imports[file]:
+        dfs(dep, group)
+
+for f in all_files:
+    if f not in visited:
+        group = set()
+        dfs(f, group)
+        groups.append(group)
+
+print(f"\nHittade {len(groups)} filgrupper baserat på beroenden.\n")
+
+# Processa varje grupp
+for group in groups:
+    print("Analyserar grupp:")
+    for f in group:
+        print(f" - {f}")
+
+    files_text = ""
+    for f in group:
+        files_text += f"# Fil: {f.name}\n" + file_contents[f] + "\n\n"
+
+    user_instruction = input("\nVad vill du att ChatGPT ska förbättra i denna grupp? (beskriv på svenska): ").strip()
+    if not user_instruction:
+        print("❌ Skippade gruppen (ingen instruktion).")
+        continue
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4-turbo",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Du är ChatGPT – en erfaren utvecklare. "
+                        "Förbättra alla filer enligt instruktionen. "
+                        "Behåll funktionalitet, men förbättra struktur, läsbarhet och kommentera ändringar tydligt. "
+                        "Returnera varje fil med rubriker i formatet: '# Fil: filnamn.ext'"
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": f"Instruktion: {user_instruction}\n\n{files_text}"
+                }
+            ]
+        )
+
+        improved_all = response['choices'][0]['message']['content']
+        files_split = re.split(r'# Fil: (.+)', improved_all)[1:]
+
+        changed_files = dict(zip(files_split[::2], files_split[1::2]))
+
+        for filename, new_code in changed_files.items():
+            target_path = next((f for f in group if f.name == filename.strip()), None)
+            if not target_path:
+                print(f"⚠ Filen {filename} hittades inte i denna grupp – hoppar över.")
+                continue
+
+            original = file_contents[target_path]
+            improved = new_code.strip()
+
+            # Visa diff
+            print(f"\nSkillnader för {filename.strip()}:")
+            diff = difflib.unified_diff(
+                original.splitlines(),
+                improved.splitlines(),
+                fromfile='original',
+                tofile='improved',
+                lineterm=''
+            )
+            print("\n".join(diff))
+
+            # Fråga om överskrivning
+            choice = input(f"\nVill du skriva över {filename.strip()} med AI-versionen? (ja/nej): ").strip().lower()
+            if choice in ["ja", "j", "yes", "y"]:
+                # Spara .bak i samma mapp
+                backup_path = target_path.with_suffix(target_path.suffix + ".bak")
+                with open(backup_path, "w") as backup:
+                    backup.write(original)
+
+                with open(target_path, "w") as f:
+                    f.write(improved)
+
+                print(f"✔ {filename.strip()} uppdaterad (backup: {backup_path})")
+            else:
+                print(f"❌ Skippade överskrivning av {filename.strip()}.")
+
+    except Exception as e:
+        print(f"Fel vid GPT-förfrågan: {e}")
