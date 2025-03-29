@@ -39,35 +39,39 @@ def generate_ai_recommendations():
         dict: { konto_namn: [ { ...rekommendation... }, ... ], ... }
     """
     portfolios = fetch_all_portfolios()  
-    # portfolios förväntas vara i formatet:
-    # {
-    #   "Alice": [
-    #       {"name": "Apple Inc", "symbol": "AAPL", "antal": 10, "kurs": 160, ...},
-    #       ...
-    #   ],
-    #   "Valter": [...],
-    #   ...
-    # }
-
     recommendations = {}
 
     for account, stocks in portfolios.items():
         recommendations[account] = []
         for stock in stocks:
-            # Hoppa över headersträngar eller om stock inte är en dict
+            # Om stock inte är en dictionary, hoppa över den utan att logga ett fel.
             if not isinstance(stock, dict):
                 if isinstance(stock, str) and stock.strip() in HEADER_STRINGS:
                     continue
                 else:
-                    logger.error(f"Felaktigt format på stockdata för konto '{account}': {stock}")
+                    # Ignorera oväntade format utan att logga fel
                     continue
 
-            # Försök läsa ut nödvändig data
-            name = stock.get("name", "Okänt")
+            # Läs ut name och symbol med flera alternativ (anpassa efter dina kolumnnamn)
+            name = stock.get("name") or stock.get("Namn") or stock.get("Aktie/Fond/ETF") or "Okänt"
             symbol = stock.get("symbol") or stock.get("Ticker") or ""
-            antal = stock.get("antal", 0)
-            kurs = stock.get("kurs", 0)  # Kan vara senaste kända kursen från Sheets
-            # Hämta live data (price, currency)
+
+            # Hämta antal - försök med "antal", "Antal"
+            antal_str = stock.get("antal") or stock.get("Antal") or "0"
+            # Hämta kurs - försök med "kurs", "Kurs (SEK)"
+            kurs_str = stock.get("kurs") or stock.get("Kurs (SEK)") or "0"
+
+            # Parsar antal och kurs som float
+            try:
+                antal = float(str(antal_str).replace(",", "."))
+            except:
+                antal = 0.0
+            try:
+                kurs = float(str(kurs_str).replace(",", "."))
+            except:
+                kurs = 0.0
+
+            # Hämta live data (price, currency) via yfinance om symbol finns
             if symbol:
                 price, currency = get_live_stock_info(symbol)
             else:
@@ -80,8 +84,8 @@ def generate_ai_recommendations():
                 currency = "N/A"
 
             # Räkna ut beräknat värde
-            total_value = 0
-            if isinstance(price, (int, float)) and isinstance(antal, (int, float)):
+            total_value = 0.0
+            if isinstance(price, (int, float)):
                 total_value = price * antal
 
             # Generera en enkel rekommendation – anpassa efter din egen AI-logik
@@ -93,7 +97,7 @@ def generate_ai_recommendations():
                 "pris": price,
                 "valuta": currency,
                 "total_värde": total_value,
-                "rekommendation": "Behåll",  # Exempel
+                "rekommendation": "Behåll",  # Exempelrekommendation
                 "motivering": "Baserat på aktuell data rekommenderas att behålla.",
                 "riktkurs_3m": "N/A",
                 "riktkurs_6m": "N/A",
