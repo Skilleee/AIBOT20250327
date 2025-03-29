@@ -1,20 +1,44 @@
-# portfolio_management/portfolio_ai_analysis.py
+import yfinance as yf
+
+def get_live_stock_info(symbol):
+    """
+    Hämtar livepris och valuta för en aktie med hjälp av yfinance.
+    Returnerar (price, currency) eller (None, None) vid fel.
+    """
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        price = info.get("regularMarketPrice")
+        currency = info.get("currency")
+        return price, currency
+    except Exception as e:
+        # Om något går fel, returnera None
+        return None, None
 
 def generate_ai_recommendations():
     """
     Returnerar en dictionary med kontonamn som nycklar och en lista av
     rekommendations-dictionaries som värden.
-    Varje dictionary innehåller bland annat 'namn', 'kategori', 'värde', 'valuta',
-    'rekommendation', 'motivering', 'riktkurs_3m', 'riktkurs_6m', 'riktkurs_12m',
-    'pe_ratio', 'rsi', 'riskbedomning' och 'historisk_prestanda'.
+    Varje dictionary innehåller:
+      - namn: aktiens namn
+      - kategori: t.ex. Aktie
+      - symbol: aktiens ticker
+      - värde: aktiens pris (uppdateras med live-data)
+      - valuta: aktiens valuta (uppdateras med live-data)
+      - rekommendation: t.ex. Köp, Sälj, Behåll
+      - motivering: motivering till rekommendationen
+      - riktkurs_3m, riktkurs_6m, riktkurs_12m: förväntade prisnivåer
+      - pe_ratio, rsi, riskbedomning, historisk_prestanda: övrig information
     """
+    # Exempeldata – statiska delar som sedan uppdateras med live-data
     recommendations = {
         "Huvudkonto": [
             {
                 "namn": "Tesla",
                 "kategori": "Aktie",
-                "värde": 850,
-                "valuta": "USD",
+                "symbol": "TSLA",
+                "värde": 850,  # kommer att uppdateras
+                "valuta": "USD",  # platshållare
                 "rekommendation": "Köp",
                 "motivering": "Stark uppåttrend, hög volym.",
                 "riktkurs_3m": "900 USD",
@@ -28,8 +52,9 @@ def generate_ai_recommendations():
             {
                 "namn": "Spotify",
                 "kategori": "Aktie",
-                "värde": 120,
-                "valuta": "SEK",
+                "symbol": "SPOT",  # exempelsymbol, justera om nödvändigt
+                "värde": 120,      # kommer att uppdateras
+                "valuta": "SEK",   # platshållare
                 "rekommendation": "Behåll",
                 "motivering": "Stabil efterfrågan, långsiktig tillväxt.",
                 "riktkurs_3m": "125 SEK",
@@ -45,8 +70,9 @@ def generate_ai_recommendations():
             {
                 "namn": "Apple",
                 "kategori": "Aktie",
-                "värde": 155,
-                "valuta": "USD",
+                "symbol": "AAPL",
+                "värde": 155,  # kommer att uppdateras
+                "valuta": "USD",  # platshållare
                 "rekommendation": "Sälj",
                 "motivering": "Överköpt, risk för korrigering.",
                 "riktkurs_3m": "150 USD",
@@ -59,6 +85,19 @@ def generate_ai_recommendations():
             }
         ]
     }
+    
+    # Uppdatera varje rekommendationspost med live-data
+    for konto, rec_list in recommendations.items():
+        for rec in rec_list:
+            symbol = rec.get("symbol")
+            if symbol:
+                price, currency = get_live_stock_info(symbol)
+                if price is not None and currency is not None:
+                    rec["värde"] = price
+                    rec["valuta"] = currency
+                else:
+                    rec["värde"] = "N/A"
+                    rec["valuta"] = "N/A"
     return recommendations
 
 def suggest_new_investments(portfolios):
