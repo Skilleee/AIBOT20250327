@@ -1,27 +1,35 @@
 import logging
 from datetime import datetime
+import json
 import requests
 
 from portfolio_management.portfolio_ai_analysis import generate_ai_recommendations, suggest_new_investments
 from portfolio_management.portfolio_google_sheets import fetch_all_portfolios
 from config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
-# Loggning
+# Konfigurera loggning
 logging.basicConfig(filename="telegram_notifications.log", level=logging.INFO)
 
-# Grundläggande funktion för att skicka text via Telegram
-def send_telegram_message(message):
+# Grundläggande funktion för att skicka meddelanden via Telegram med stöd för reply_markup
+def send_telegram_message(message, reply_markup=None):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+        data = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "Markdown"
+        }
+        if reply_markup:
+            data["reply_markup"] = json.dumps(reply_markup)
         response = requests.post(url, data=data)
+        response.raise_for_status()
         logging.info("✅ Telegram-meddelande skickat.")
         return response.json()
     except Exception as e:
         logging.error(f"❌ Fel vid skickning av Telegram-meddelande: {str(e)}")
         return None
 
-# Funktion för att skicka AI-rekommendationer med utökad information
+# Funktion för att skicka AI-rekommendationer med utökad information och inline-knapp för dashboard
 def send_ai_recommendations():
     try:
         recommendations = generate_ai_recommendations()
@@ -31,27 +39,31 @@ def send_ai_recommendations():
         for konto, innehav in recommendations.items():
             message += f"\n *{konto}*\n"
             for post in innehav:
-                namn = post.get("namn")
-                kategori = post.get("kategori")
-                värde = post.get("värde")
-                rek = post.get("rekommendation")
-                motivering = post.get("motivering", "")
-                riktkurs_3m = post.get("riktkurs_3m", "N/A")
-                riktkurs_6m = post.get("riktkurs_6m", "N/A")
-                riktkurs_12m = post.get("riktkurs_12m", "N/A")
-                pe_ratio = post.get("pe_ratio", "N/A")
-                rsi = post.get("rsi", "N/A")
-                riskbedomning = post.get("riskbedomning", "N/A")
-                historisk_prestanda = post.get("historisk_prestanda", "N/A")
-                
-                message += f"• `{namn}` ({kategori}, {värde} kr): *{rek}*"
-                if motivering:
-                    message += f" – {motivering}"
-                message += f"\n  Riktkurser: 3 mån: {riktkurs_3m}, 6 mån: {riktkurs_6m}, 12 mån: {riktkurs_12m}\n"
-                message += f"  PE-tal: {pe_ratio}, RSI: {rsi}, Riskbedömning: {riskbedomning}\n"
-                message += f"  Historisk Prestanda: {historisk_prestanda}\n"
-                # Inline-länkar (exempelvis till en webbsida med mer info om aktien)
-                message += f"  Länkar: [Visa historik](https://example.com/historik/{namn}), [Mer info](https://example.com/info/{namn})\n\n"
+                # Säkerställ att vi arbetar med en dictionary
+                if isinstance(post, dict):
+                    namn = post.get("namn", "Okänt")
+                    kategori = post.get("kategori", "Okänt")
+                    värde = post.get("värde", "N/A")
+                    rek = post.get("rekommendation", "")
+                    motivering = post.get("motivering", "")
+                    riktkurs_3m = post.get("riktkurs_3m", "N/A")
+                    riktkurs_6m = post.get("riktkurs_6m", "N/A")
+                    riktkurs_12m = post.get("riktkurs_12m", "N/A")
+                    pe_ratio = post.get("pe_ratio", "N/A")
+                    rsi = post.get("rsi", "N/A")
+                    riskbedomning = post.get("riskbedomning", "N/A")
+                    historisk_prestanda = post.get("historisk_prestanda", "N/A")
+                    
+                    message += f"• `{namn}` ({kategori}, {värde} kr): *{rek}*"
+                    if motivering:
+                        message += f" – {motivering}"
+                    message += f"\n  Riktkurser: 3 mån: {riktkurs_3m}, 6 mån: {riktkurs_6m}, 12 mån: {riktkurs_12m}\n"
+                    message += f"  PE-tal: {pe_ratio}, RSI: {rsi}, Riskbedömning: {riskbedomning}\n"
+                    message += f"  Historisk Prestanda: {historisk_prestanda}\n"
+                    message += f"  Länkar: [Visa historik](https://example.com/historik/{namn}), [Mer info](https://example.com/info/{namn})\n\n"
+                else:
+                    # Om post inte är en dictionary läggs den bara till som text
+                    message += f"• {post}\n"
         
         message += "\n *Föreslagna nya investeringar:*\n"
         for konto, förslag in new_suggestions.items():
@@ -59,7 +71,14 @@ def send_ai_recommendations():
             for kategori, namn in förslag:
                 message += f"• `{namn}` – {kategori}\n"
         
-        send_telegram_message(message)
+        # Exempel på inline-knapp som öppnar en dashboard
+        reply_markup = {
+            "inline_keyboard": [
+                [{"text": "Öppna Dashboard", "url": "https://example.com/dashboard"}]
+            ]
+        }
+        
+        send_telegram_message(message, reply_markup=reply_markup)
     except Exception as e:
         logging.error(f"❌ Fel vid AI-rekommendationer: {str(e)}")
 
@@ -74,6 +93,7 @@ def send_pdf_report_to_telegram(file_path):
                 "caption": f" Daglig AI-rapport – {datetime.today().date()}"
             }
             response = requests.post(url, data=data, files=files)
+            response.raise_for_status()
             logging.info("✅ PDF-rapport skickad till Telegram.")
             return response.ok
     except Exception as e:
@@ -81,13 +101,14 @@ def send_pdf_report_to_telegram(file_path):
         return False
 
 # Funktion för att skicka ett diagram som bild
-def send_chart_to_telegram(image_path, caption=" Entry/Exit-graf"):
+def send_chart_to_telegram(image_path, caption="Entry/Exit-graf"):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
         with open(image_path, "rb") as img:
             files = {"photo": img}
             data = {"chat_id": TELEGRAM_CHAT_ID, "caption": caption}
             response = requests.post(url, data=data, files=files)
+            response.raise_for_status()
             logging.info("✅ Diagram skickat till Telegram.")
             return response.ok
     except Exception as e:
@@ -148,6 +169,7 @@ def send_rl_backtest_summary(reward, final_value):
         logging.error(f"❌ Fel vid skickning av RL-backtestresultat: {str(e)}")
 
 if __name__ == "__main__":
+    # Exempeldata för testkörning
     market_data = {
         "sp500": 1.2,
         "nasdaq": 0.8,
@@ -164,4 +186,6 @@ if __name__ == "__main__":
     send_macro_event_alert(macro_event)
     send_ai_recommendations()
     send_rl_backtest_summary(12543.21, 108769.56)
+    
+    # Se till att filen finns, annars kommentera ut denna rad under testning
     send_pdf_report_to_telegram("reports/daily_report.pdf")
