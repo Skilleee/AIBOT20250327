@@ -7,7 +7,6 @@ from portfolio_management.portfolio_ai_analysis import generate_ai_recommendatio
 from portfolio_management.portfolio_google_sheets import fetch_all_portfolios
 from config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
-# Konfigurera loggning
 logging.basicConfig(filename="telegram_notifications.log", level=logging.INFO)
 
 def send_telegram_message(message, reply_markup=None):
@@ -96,8 +95,8 @@ def send_rl_backtest_summary(reward, final_value):
 
 def send_ai_recommendations():
     """
-    Hämtar AI-rekommendationer och nya investeringsförslag, formaterar dem
-    med tydliga rubriker och punktlistor, och skickar dem via Telegram.
+    Hämtar AI-rekommendationer och nya investeringsförslag, formaterar dem med tydliga rubriker
+    och punktlistor, och skickar dem via Telegram.
     """
     try:
         recommendations = generate_ai_recommendations()
@@ -216,7 +215,7 @@ if __name__ == "__main__":
     send_ai_recommendations()
     send_rl_backtest_summary(12543.21, 108769.56)
     
-    # Dynamiskt filnamn baserat på dagens datum (ex: reports/daily_report_2025-03-29.pdf)
+    # Dynamiskt filnamn baserat på dagens datum (t.ex. reports/daily_report_2025-03-29.pdf)
     today = datetime.today().strftime("%Y-%m-%d")
     file_path = f"reports/daily_report_{today}.pdf"
     send_pdf_report_to_telegram(file_path)
