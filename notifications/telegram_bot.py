@@ -6,10 +6,10 @@ from portfolio_management.portfolio_ai_analysis import generate_ai_recommendatio
 from portfolio_management.portfolio_google_sheets import fetch_all_portfolios
 from config.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
-# 📄 Loggning
+# Loggning
 logging.basicConfig(filename="telegram_notifications.log", level=logging.INFO)
 
-# 🟢 Grundläggande funktion för att skicka text
+# Grundläggande funktion för att skicka text via Telegram
 def send_telegram_message(message):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -21,33 +21,49 @@ def send_telegram_message(message):
         logging.error(f"❌ Fel vid skickning av Telegram-meddelande: {str(e)}")
         return None
 
-# 📊 Daglig AI-analys + nya förslag
+# Funktion för att skicka AI-rekommendationer med utökad information
 def send_ai_recommendations():
     try:
         recommendations = generate_ai_recommendations()
         new_suggestions = suggest_new_investments(fetch_all_portfolios())
-
-        message = "🤖 *AI Rekommendationer per konto:*\n"
+        message = " *AI Rekommendationer per konto:*\n"
+        
         for konto, innehav in recommendations.items():
-            message += f"\n📁 *{konto}*\n"
+            message += f"\n *{konto}*\n"
             for post in innehav:
-                namn = post["namn"]
-                kategori = post["kategori"]
-                värde = post["värde"]
-                rek = post["rekommendation"]
-                message += f"• `{namn}` ({kategori}, {värde} kr): *{rek}*\n"
-
-        message += "\n🆕 *Föreslagna nya investeringar:*\n"
+                namn = post.get("namn")
+                kategori = post.get("kategori")
+                värde = post.get("värde")
+                rek = post.get("rekommendation")
+                motivering = post.get("motivering", "")
+                riktkurs_3m = post.get("riktkurs_3m", "N/A")
+                riktkurs_6m = post.get("riktkurs_6m", "N/A")
+                riktkurs_12m = post.get("riktkurs_12m", "N/A")
+                pe_ratio = post.get("pe_ratio", "N/A")
+                rsi = post.get("rsi", "N/A")
+                riskbedomning = post.get("riskbedomning", "N/A")
+                historisk_prestanda = post.get("historisk_prestanda", "N/A")
+                
+                message += f"• `{namn}` ({kategori}, {värde} kr): *{rek}*"
+                if motivering:
+                    message += f" – {motivering}"
+                message += f"\n  Riktkurser: 3 mån: {riktkurs_3m}, 6 mån: {riktkurs_6m}, 12 mån: {riktkurs_12m}\n"
+                message += f"  PE-tal: {pe_ratio}, RSI: {rsi}, Riskbedömning: {riskbedomning}\n"
+                message += f"  Historisk Prestanda: {historisk_prestanda}\n"
+                # Inline-länkar (exempelvis till en webbsida med mer info om aktien)
+                message += f"  Länkar: [Visa historik](https://example.com/historik/{namn}), [Mer info](https://example.com/info/{namn})\n\n"
+        
+        message += "\n *Föreslagna nya investeringar:*\n"
         for konto, förslag in new_suggestions.items():
-            message += f"\n📁 *{konto}*\n"
+            message += f"\n *{konto}*\n"
             for kategori, namn in förslag:
                 message += f"• `{namn}` – {kategori}\n"
-
+        
         send_telegram_message(message)
     except Exception as e:
         logging.error(f"❌ Fel vid AI-rekommendationer: {str(e)}")
 
-# 📎 Skicka PDF-rapport som bilaga
+# Funktion för att skicka en PDF-rapport som bilaga
 def send_pdf_report_to_telegram(file_path):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument"
@@ -55,7 +71,7 @@ def send_pdf_report_to_telegram(file_path):
             files = {"document": pdf_file}
             data = {
                 "chat_id": TELEGRAM_CHAT_ID,
-                "caption": f"📄 Daglig AI-rapport – {datetime.today().date()}"
+                "caption": f" Daglig AI-rapport – {datetime.today().date()}"
             }
             response = requests.post(url, data=data, files=files)
             logging.info("✅ PDF-rapport skickad till Telegram.")
@@ -64,16 +80,13 @@ def send_pdf_report_to_telegram(file_path):
         logging.error(f"❌ Fel vid skickning av PDF-rapport: {str(e)}")
         return False
 
-# 🖼️ Skicka diagram till Telegram
-def send_chart_to_telegram(image_path, caption="📈 Entry/Exit-graf"):
+# Funktion för att skicka ett diagram som bild
+def send_chart_to_telegram(image_path, caption=" Entry/Exit-graf"):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
         with open(image_path, "rb") as img:
             files = {"photo": img}
-            data = {
-                "chat_id": TELEGRAM_CHAT_ID,
-                "caption": caption
-            }
+            data = {"chat_id": TELEGRAM_CHAT_ID, "caption": caption}
             response = requests.post(url, data=data, files=files)
             logging.info("✅ Diagram skickat till Telegram.")
             return response.ok
@@ -81,11 +94,11 @@ def send_chart_to_telegram(image_path, caption="📈 Entry/Exit-graf"):
         logging.error(f"❌ Fel vid skickning av diagram till Telegram: {str(e)}")
         return False
 
-# 📈 Marknadsrapport
+# Funktion för att skicka en daglig marknadsrapport
 def send_daily_market_report(market_data):
     try:
         summary = (
-            f"📊 *Daglig marknadsrapport:*\n"
+            f" *Daglig marknadsrapport:*\n"
             f"S&P 500: {market_data['sp500']}%\n"
             f"Nasdaq: {market_data['nasdaq']}%\n"
             f"Tech-sektorn: {market_data['tech_sector']}%\n"
@@ -95,7 +108,7 @@ def send_daily_market_report(market_data):
     except Exception as e:
         logging.error(f"❌ Fel vid marknadsrapport: {str(e)}")
 
-# ⚠️ Riskvarning
+# Funktion för att skicka en riskvarning vid hög volatilitet
 def send_risk_alert(risk_level):
     try:
         if risk_level > 0.05:
@@ -104,29 +117,29 @@ def send_risk_alert(risk_level):
     except Exception as e:
         logging.error(f"❌ Fel vid riskvarning: {str(e)}")
 
-# 📢 Portföljuppdatering
+# Funktion för att skicka portföljuppdatering
 def send_portfolio_update(portfolio_data):
     try:
-        message = "📢 *Portföljuppdatering:*\n"
+        message = " *Portföljuppdatering:*\n"
         for stock, change in portfolio_data.items():
             message += f"{stock}: {change:.2%}\n"
         send_telegram_message(message)
     except Exception as e:
         logging.error(f"❌ Fel vid portföljnotis: {str(e)}")
 
-# 🌐 Makrohändelser
+# Funktion för att skicka makrohändelser
 def send_macro_event_alert(event):
     try:
-        message = f"📢 *Makrohändelse:* {event}"
+        message = f" *Makrohändelse:* {event}"
         send_telegram_message(message)
     except Exception as e:
         logging.error(f"❌ Fel vid makronotis: {str(e)}")
 
-# 🔍 Sammanfattning efter RL-backtest
+# Funktion för att skicka en sammanfattning efter RL-backtest
 def send_rl_backtest_summary(reward, final_value):
     try:
         message = (
-            f"🤖 *RL-agentens backtest:*\n"
+            f" *RL-agentens backtest:*\n"
             f"• Total reward: {reward:.2f}\n"
             f"• Slutligt portföljvärde: {final_value:,.2f} SEK"
         )
@@ -134,7 +147,6 @@ def send_rl_backtest_summary(reward, final_value):
     except Exception as e:
         logging.error(f"❌ Fel vid skickning av RL-backtestresultat: {str(e)}")
 
-# 🔁 Test
 if __name__ == "__main__":
     market_data = {
         "sp500": 1.2,
@@ -145,7 +157,7 @@ if __name__ == "__main__":
     risk_level = 0.06
     portfolio_data = {"Tesla": -0.05, "Apple": 0.02, "Amazon": 0.03}
     macro_event = "Fed höjde räntan med 0.25%."
-
+    
     send_daily_market_report(market_data)
     send_risk_alert(risk_level)
     send_portfolio_update(portfolio_data)
