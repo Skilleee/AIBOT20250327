@@ -4,16 +4,44 @@ import argparse
 import ast
 import re
 import subprocess
+import importlib.util
 from datetime import datetime
 from dotenv import load_dotenv
-from .utils import backup_file, send_telegram_message
 
+# Ladda .env-variabler
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 EXCLUDE_DIRS = {"venv", "__pycache__", ".git", "tests"}
+
+# 🔁 Automatisk fallback-import
+
+def dynamic_import(function_name, search_dirs=("utils", "notifications")):
+    for folder in search_dirs:
+        for root, _, files in os.walk(folder):
+            for file in files:
+                if not file.endswith(".py") or file.startswith("__"):
+                    continue
+                path = os.path.join(root, file)
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        content = f.read()
+                        if f"def {function_name}(" in content:
+                            module_name = os.path.splitext(os.path.relpath(path).replace(os.sep, "."))[0]
+                            spec = importlib.util.spec_from_file_location(module_name, path)
+                            module = importlib.util.module_from_spec(spec)
+                            spec.loader.exec_module(module)
+                            print(f"✅ Hittade '{function_name}' i {path}")
+                            return getattr(module, function_name)
+                except Exception:
+                    continue
+    print(f"❌ Kunde inte hitta funktionen '{function_name}' i projektet.")
+    exit(1)
+
+backup_file = dynamic_import("backup_file")
+send_telegram_message = dynamic_import("send_telegram_message")
 
 def is_python_file(filename):
     return filename.endswith(".py")
@@ -215,9 +243,10 @@ def main():
     parser.add_argument("--all", action="store_true", help="Refaktorisera hela projektet")
     parser.add_argument("--dry-run", action="store_true", help="Visa men skriv inte över filer")
     parser.add_argument("--no-telegram", action="store_true", help="Hoppa över Telegram-meddelande")
+    parser.add_argument("--include-tests", action="store_true", help="Inkludera testfiler i refaktorisering")
 
     args = parser.parse_args()
-    all_files = find_all_python_files()
+    all_files = find_all_python_files(include_tests=args.include_tests)
 
     if args.file:
         handle_group([args.file], dry_run=args.dry_run, notify=not args.no_telegram)
