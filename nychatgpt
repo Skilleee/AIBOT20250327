@@ -1,0 +1,137 @@
+import os
+import openai
+import argparse
+import ast
+import re
+from dotenv import load_dotenv
+from .utils import backup_file, send_telegram_message
+
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+EXCLUDE_DIRS = {"venv", "__pycache__", ".git", "tests"}
+
+def is_python_file(filename):
+    return filename.endswith(".py")
+
+def find_all_python_files():
+    py_files = []
+    for root, dirs, files in os.walk("."):
+        dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+        for file in files:
+            if is_python_file(file):
+                py_files.append(os.path.join(root, file))
+    return py_files
+
+def parse_imports(filepath):
+    with open(filepath, "r", encoding="utf-8") as f:
+        try:
+            tree = ast.parse(f.read())
+            return {node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module}
+        except Exception:
+            return set()
+
+def group_files_by_dependency(files, target_file=None):
+    groups = []
+    visited = set()
+    for file in files:
+        if file in visited:
+            continue
+        group = {file}
+        imports = parse_imports(file)
+        for other in files:
+            if other == file:
+                continue
+            if any(os.path.basename(other).startswith(i) for i in imports):
+                group.add(other)
+        visited |= group
+        groups.append(list(group))
+    if target_file:
+        for g in groups:
+            if target_file in g:
+                return [g]
+        return [[target_file]]
+    return groups
+
+def refactor_code(code):
+    prompt = f"""
+Du är en erfaren Python-utvecklare med fokus på kodkvalitet, läsbarhet och långsiktigt underhåll.
+
+Ditt uppdrag är att refaktorisera koden nedan enligt följande riktlinjer:
+
+- Förbättra kodstruktur och modularisering (t.ex. bryt ut logik till funktioner vid behov)
+- Förbättra läsbarhet och namngivning enligt PEP8
+- Lägg till typanoteringar där det är möjligt
+- Lägg till korta docstrings där det hjälper förståelsen
+- Undvik duplicerad kod
+- Koden ska behålla samma funktionalitet
+- Ändra inte affärslogik eller extern funktionalitet
+
+Kommentera inte varje rad. Struktur och bra namn ska räcka för förståelsen.
+
+Här är koden som ska refaktoreras:
+```python
+{code}
+
+“””
+response = openai.ChatCompletion.create(
+model=“gpt-4o”,
+messages=[
+{“role”: “system”, “content”: “Du är en expert på Python och refaktorering.”},
+{“role”: “user”, “content”: prompt}
+],
+temperature=0.3
+)
+return response.choices[0].message.content
+
+def handle_group(files, dry_run=False, notify=True):
+full_code = “”
+for file in files:
+with open(file, “r”, encoding=“utf-8”) as f:
+full_code += f”\n# Fil: {file}\n” + f.read()
+try:
+refactored = refactor_code(full_code)
+split_code = re.split(r”# Fil: (.+)”, refactored)[1:]
+changed_files = []
+for i in range(0, len(split_code), 2):
+file_name = split_code[i].strip()
+new_code = split_code[i + 1].strip()
+if not os.path.exists(file_name):
+continue
+if not dry_run:
+backup_file(file_name)
+with open(file_name, “w”, encoding=“utf-8”) as f:
+f.write(new_code)
+changed_files.append(file_name)
+if notify:
+send_telegram_message(“Refaktorerade filer:\n” + “\n”.join(changed_files), TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
+else:
+print(“Refaktorerade filer:\n” + “\n”.join(changed_files))
+except Exception as e:
+print(f”Fel vid refaktorisering: {e}”)
+
+def main():
+parser = argparse.ArgumentParser(description=“GPT-Refactor CLI”)
+parser.add_argument(”–file”, type=str, help=“Refaktorisera en specifik fil”)
+parser.add_argument(”–group”, type=str, help=“Refaktorisera filens beroendegrupp”)
+parser.add_argument(”–all”, action=“store_true”, help=“Refaktorisera hela projektet”)
+parser.add_argument(”–dry-run”, action=“store_true”, help=“Visa men skriv inte över filer”)
+parser.add_argument(”–no-telegram”, action=“store_true”, help=“Hoppa över Telegram-meddelande”)
+
+args = parser.parse_args()
+all_files = find_all_python_files()
+
+if args.file:
+    handle_group([args.file], dry_run=args.dry_run, notify=not args.no_telegram)
+elif args.group:
+    groups = group_files_by_dependency(all_files, args.group)
+    for g in groups:
+        handle_group(g, dry_run=args.dry_run, notify=not args.no_telegram)
+elif args.all:
+    groups = group_files_by_dependency(all_files)
+    for g in groups:
+        handle_group(g, dry_run=args.dry_run, notify=not args.no_telegram)
+else:
+    print("Använd --file, --group eller --all för att specificera vad som ska refaktoreras.")
