@@ -1,155 +1,239 @@
+ import os
 import openai
-import os
+import argparse
 import re
+import platform
+import subprocess
+import ast
+import graphviz
 from pathlib import Path
-import difflib
+from datetime import datetime
 from collections import defaultdict
+from dotenv import load_dotenv
+import requests
 
-# API-nyckel
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
-    print("Du måste exportera OPENAI_API_KEY innan du kör.")
-    exit(1)
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-openai.api_key = api_key
+EXCLUDED_DIRS = {"venv", "__pycache__", ".git", "tests"}
+ALLOWED_EXT = [".py"]
 
-project_root = Path(".")
+def read_file(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
 
-# Tillåtna filtyper
-allowed_extensions = {
-    ".py", ".txt", ".json", ".csv", ".md", ".html", ".xml", ".zip",
-    ".yaml", ".yml", ".cfg", ".ini", ".toml", ".js", ".ts", ".css",
-    ".env", ".sh", ".bat"
-}
-
-# Hämta alla relevanta filer
-all_files = [
-    f for f in project_root.rglob("*")
-    if f.is_file()
-    and f.suffix in allowed_extensions
-    and "venv" not in f.parts
-    and "__pycache__" not in f.parts
-    and "backups" not in f.parts
-    and not f.name.endswith(".bak")
-    and not f.name.endswith(".backup")
-    and not f.name.endswith(".bak.py")
-    and not f.name.endswith(".py.bak")
-    and not f.name.startswith("~")
-    and not f.name.startswith(".")
-]
-
-# Bygg beroendekarta för .py-filer
-file_imports = defaultdict(set)
-file_contents = {}
-
-for f in all_files:
-    try:
-        content = f.read_text(errors="ignore")
-        file_contents[f] = content
-        if f.suffix == ".py":
-            imports = re.findall(r'^\s*(?:from|import)\s+([\w_\.]+)', content, re.MULTILINE)
-            for imp in imports:
-                imp_base = imp.split('.')[0]
-                for other in all_files:
-                    if other.stem == imp_base and other != f:
-                        file_imports[f].add(other)
-    except Exception as e:
-        print(f"Misslyckades läsa {f}: {e}")
-
-# Gruppera beroenden
-visited = set()
-groups = []
-
-def dfs(file, group):
-    if file in visited:
+def write_file(path, content):
+    filename = path.name
+    if (
+        "chatgpt.py" in filename or
+        filename.endswith(".test.py") or
+        "test_" in filename or
+        str(path).startswith(".backups")
+    ):
         return
-    visited.add(file)
-    group.add(file)
-    for dep in file_imports[file]:
-        dfs(dep, group)
 
-for f in all_files:
-    if f not in visited:
-        group = set()
-        dfs(f, group)
-        groups.append(group)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    backup_dir = Path(".backups")
+    backup_dir.mkdir(exist_ok=True)
+    backup_name = f"{filename}.{timestamp}.bak"
+    backup_path = backup_dir / backup_name
 
-print(f"\nHittade {len(groups)} filgrupper baserat på beroenden.\n")
+    with open(backup_path, "w", encoding="utf-8") as bf:
+        bf.write(read_file(path))
 
-# Processa varje grupp
-for group in groups:
-    print("Analyserar grupp:")
-    for f in group:
-        print(f" - {f}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
 
-    files_text = ""
-    for f in group:
-        files_text += f"# Fil: {f.name}\n" + file_contents[f] + "\n\n"
+def find_python_files():
+    return [
+        f for f in Path(".").rglob("*.py")
+        if not any(part in EXCLUDED_DIRS for part in f.parts)
+    ]
 
-    user_instruction = input("\nVad vill du att ChatGPT ska förbättra i denna grupp? (beskriv på svenska): ").strip()
-    if not user_instruction:
-        print("❌ Skippade gruppen (ingen instruktion).")
-        continue
+def map_file_dependencies(files):
+    module_map = {f.stem: f for f in files}
+    dependencies = defaultdict(set)
+
+    for f in files:
+        try:
+            tree = ast.parse(read_file(f))
+        except SyntaxError:
+            continue
+
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    mod = alias.name.split('.')[0]
+                    if mod in module_map and module_map[mod] != f:
+                        dependencies[f].add(module_map[mod])
+            elif isinstance(node, ast.ImportFrom):
+                mod = node.module.split('.')[0] if node.module else None
+                if mod in module_map and module_map[mod] != f:
+                    dependencies[f].add(module_map[mod])
+    return dependencies
+
+def group_by_dependencies(files):
+    deps = map_file_dependencies(files)
+    groups = []
+    visited = set()
+
+    def dfs(file, group):
+        if file in visited:
+            return
+        visited.add(file)
+        group.append(file)
+        for dep in deps.get(file, []):
+            dfs(dep, group)
+
+    for f in files:
+        if f not in visited:
+            group = []
+            dfs(f, group)
+            groups.append(group)
+    return groups
+
+def visualize_dependencies(deps, show_graph=False):
+    print("\nBeroendekarta:")
+    dot = graphviz.Digraph(comment="Python File Dependencies")
+
+    for f, targets in deps.items():
+        dot.node(f.name)
+        for dep in targets:
+            dot.node(dep.name)
+            dot.edge(f.name, dep.name)
+            print(f"{f.name} → {dep.name}")
+
+    dot_path = Path("file_dependencies.dot")
+    png_path = Path("file_dependencies.png")
+    dot.save(dot_path)
 
     try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4-turbo",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Du är ChatGPT – en erfaren utvecklare. "
-                        "Förbättra alla filer enligt instruktionen. "
-                        "Behåll funktionalitet, men förbättra struktur, läsbarhet och kommentera ändringar tydligt. "
-                        "Returnera varje fil med rubriker i formatet: '# Fil: filnamn.ext'"
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": f"Instruktion: {user_instruction}\n\n{files_text}"
-                }
-            ]
-        )
-
-        improved_all = response['choices'][0]['message']['content']
-        files_split = re.split(r'# Fil: (.+)', improved_all)[1:]
-
-        changed_files = dict(zip(files_split[::2], files_split[1::2]))
-
-        for filename, new_code in changed_files.items():
-            target_path = next((f for f in group if f.name == filename.strip()), None)
-            if not target_path:
-                print(f"⚠ Filen {filename} hittades inte i denna grupp – hoppar över.")
-                continue
-
-            original = file_contents[target_path]
-            improved = new_code.strip()
-
-            # Visa diff
-            print(f"\nSkillnader för {filename.strip()}:")
-            diff = difflib.unified_diff(
-                original.splitlines(),
-                improved.splitlines(),
-                fromfile='original',
-                tofile='improved',
-                lineterm=''
-            )
-            print("\n".join(diff))
-
-            # Fråga om överskrivning
-            choice = input(f"\nVill du skriva över {filename.strip()} med AI-versionen? (ja/nej): ").strip().lower()
-            if choice in ["ja", "j", "yes", "y"]:
-                # Spara .bak i samma mapp
-                backup_path = target_path.with_suffix(target_path.suffix + ".bak")
-                with open(backup_path, "w") as backup:
-                    backup.write(original)
-
-                with open(target_path, "w") as f:
-                    f.write(improved)
-
-                print(f"✔ {filename.strip()} uppdaterad (backup: {backup_path})")
-            else:
-                print(f"❌ Skippade överskrivning av {filename.strip()}.")
-
+        dot.render(png_path.stem, format="png", cleanup=True)
+        print(f"\nGraf sparad som: {png_path}")
+        if show_graph:
+            open_image(png_path)
     except Exception as e:
-        print(f"Fel vid GPT-förfrågan: {e}")
+        print(f"Kunde inte konvertera till PNG: {e}")
+
+def open_image(path):
+    system = platform.system()
+    try:
+        if system == "Windows":
+            subprocess.run(["start", str(path)], shell=True)
+        elif system == "Darwin":
+            subprocess.run(["open", str(path)])
+        else:
+            subprocess.run(["xdg-open", str(path)])
+    except Exception as e:
+        print(f"Kunde inte öppna bilden: {e}")
+
+def send_to_gpt(prompt, model="gpt-4o"):
+    response = openai.ChatCompletion.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.2,
+    )
+    return response.choices[0].message.content
+
+def load_last_feedback():
+    log_path = Path("improvement_log.md")
+    if not log_path.exists():
+        return ""
+    content = log_path.read_text(encoding="utf-8").strip().split("###")[-1]
+    return f"\nTidigare GPT-feedback:\n{content.strip()}" if content else ""
+
+def save_feedback_to_log(group, full_output):
+    log_path = Path("improvement_log.md")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    backup_dir = Path(".backups")
+    backup_dir.mkdir(exist_ok=True)
+    backup_name = f"improvement_log_{timestamp}.bak"
+    (backup_dir / backup_name).write_text(log_path.read_text(encoding="utf-8") if log_path.exists() else "")
+
+    date = datetime.now().strftime("%Y-%m-%d %H:%M")
+    entry = f"\n\n### {date} – Refaktorering av {[f.name for f in group]}\n"
+    feedback = extract_feedback_from_output(full_output)
+    with open(log_path, "a", encoding="utf-8") as log_file:
+        log_file.write(entry + feedback + "\n")
+
+def extract_feedback_from_output(output):
+    sections = output.strip().split("# FILE:")
+    improvements = []
+    for block in sections[1:]:
+        lines = block.splitlines()
+        file = lines[0].strip()
+        comments = [line for line in lines if "Förbättring" in line or "kan förbättras" in line]
+        if comments:
+            improvements.append(f"- {file}:\n  " + "\n  ".join(comments))
+    return "\n".join(improvements) if improvements else "Inga explicita förbättringar kommenterades."
+
+def refactor_group(group, dry_run=False):
+    combined = "\n\n".join([f"# FILE: {f.name}\n{read_file(f)}" for f in group])
+    previous_feedback = load_last_feedback()
+    prompt = (
+        "Du är en expert på Python. Refaktorisera, förbättra och identifiera viktiga funktioner som saknas. "
+        "Behåll logik, förbättra struktur och lägg till relevanta förbättringar. "
+        "Efter varje fil: inkludera en kort reflektion över vad som förbättrats, och vad som kan förbättras ytterligare."
+        f"{previous_feedback}\n\n"
+        "Returnera kodfil för kodfil i formatet:\n# FILE: filnamn.py\n...\n\n" + combined
+    )
+    output = send_to_gpt(prompt)
+    result_log = []
+
+    blocks = output.split("# FILE:")
+    for block in blocks[1:]:
+        header, *content_lines = block.strip().splitlines()
+        filename = header.strip()
+        new_code = "\n".join(content_lines)
+        for f in group:
+            if f.name == filename:
+                if not dry_run:
+                    write_file(f, new_code)
+                result_log.append(f"Refaktorerade: {filename}")
+                break
+
+    save_feedback_to_log(group, output)
+    return "\n".join(result_log)
+
+def send_telegram_message(text):
+    token = os.getenv("TELEGRAM_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    requests.post(url, data={"chat_id": chat_id, "text": text})
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true", help="Visa förändringar men skriv inte filerna")
+    parser.add_argument("--group", action="store_true", help="Gruppera relaterade filer efter import")
+    parser.add_argument("--show-graph", action="store_true", help="Öppna beroendegrafen automatiskt (.png)")
+    parser.add_argument("--no-telegram", action="store_true", help="Skicka ingen Telegram-notis")
+    args = parser.parse_args()
+
+    files = find_python_files()
+    if not files:
+        print("Inga Python-filer hittades.")
+        return
+
+    all_logs = []
+    if args.group:
+        deps = map_file_dependencies(files)
+        visualize_dependencies(deps, show_graph=args.show_graph)
+        groups = group_by_dependencies(files)
+        print(f"\nBearbetar {len(groups)} beroendegrupper...")
+        for group in groups:
+            log = refactor_group(group, dry_run=args.dry_run)
+            all_logs.append(log)
+    else:
+        log = refactor_group(files, dry_run=args.dry_run)
+        all_logs.append(log)
+
+    summary = "\n\n".join(all_logs)
+    print(summary)
+
+    if not args.no_telegram:
+        send_telegram_message(f"GPT-refaktorering klar.\n\n{summary[:3800]}")
+
+if __name__ == "__main__":
+    main()
