@@ -1,4 +1,3 @@
-
 import os
 import openai
 import argparse
@@ -19,13 +18,23 @@ EXCLUDE_DIRS = {"venv", "__pycache__", ".git", "tests"}
 def is_python_file(filename):
     return filename.endswith(".py")
 
-def find_all_python_files():
+def find_all_python_files(include_tests=False):
     py_files = []
     for root, dirs, files in os.walk("."):
         dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
         for file in files:
-            if is_python_file(file):
-                py_files.append(os.path.join(root, file))
+            if not file.endswith(".py"):
+                continue
+            if file.endswith(".bak"):
+                continue
+            if not include_tests:
+                if file.startswith("test_") or file.endswith("_test.py"):
+                    continue
+                if file == "__init__.py":
+                    continue
+                if os.path.abspath(os.path.join(root, file)) == os.path.abspath(__file__):
+                    continue
+            py_files.append(os.path.join(root, file))
     return py_files
 
 def parse_imports(filepath):
@@ -71,8 +80,7 @@ def run_pytest() -> str:
     try:
         result = subprocess.run(["pytest", "--tb=short", "--maxfail=3"], capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
-            return result.stdout.strip() + "
-" + result.stderr.strip()
+            return result.stdout.strip() + "\n" + result.stderr.strip()
     except Exception as e:
         return f"Kunde inte köra pytest: {e}"
     return ""
@@ -84,31 +92,20 @@ def verify_post_refactor(files: list) -> str:
     for file in files:
         error = run_python_file(file)
         if error:
-            output += f"
-❌ Fel vid körning av `{file}` efter refaktorering:
-{error}
-"
+            output += f"\n❌ Fel vid körning av `{file}` efter refaktorering:\n{error}\n"
 
     pytest_result = run_pytest()
     if pytest_result:
-        output += "
-❌ Pytest-fel efter refaktorering:
-" + pytest_result
+        output += "\n❌ Pytest-fel efter refaktorering:\n" + pytest_result
 
     if not output:
         output = "✅ Alla filer kördes korrekt och pytest passerade utan fel."
 
     os.makedirs("logs", exist_ok=True)
     with open("logs/post_check.log", "a", encoding="utf-8") as f:
-        f.write(f"
---- {now} ---
-")
-        f.write("Refaktorerade filer:
-" + "
-".join(files) + "
-")
-        f.write(output + "
-")
+        f.write(f"\n--- {now} ---\n")
+        f.write("Refaktorerade filer:\n" + "\n".join(files) + "\n")
+        f.write(output + "\n")
 
     return output.strip()
 
@@ -123,16 +120,9 @@ Filen `{file_path}` innehåller följande kod:
 '''
 
     if context_files:
-        prompt += "
-Här är relaterade beroendefiler i samma projekt:
-"
+        prompt += "\nHär är relaterade beroendefiler i samma projekt:\n"
         for ctx_path, ctx_code in context_files.items():
-            prompt += f"
-Fil: `{ctx_path}`:
-```python
-{ctx_code}
-```
-"
+            prompt += f"\nFil: `{ctx_path}`:\n```python\n{ctx_code}\n```\n"
 
     if error:
         prompt += f'''
@@ -148,9 +138,7 @@ Analysera och åtgärda detta fel i filen `{file_path}`. Förbättra samtidigt k
 Refaktorisera filen `{file_path}` så att den blir mer robust, läsbar och idiomatisk enligt PEP8.
 '''
 
-    prompt += "
-[OBS] Returnera endast den fullständiga refaktorerade koden för filen. Ingen extra text.
-"
+    prompt += "\n[OBS] Returnera endast den fullständiga refaktorerade koden för filen. Ingen extra text.\n"
 
     try:
         response = openai.ChatCompletion.create(
@@ -164,14 +152,12 @@ Refaktorisera filen `{file_path}` så att den blir mer robust, läsbar och idiom
         return response.choices[0].message.content.strip()
 
     except Exception as e:
-        error_msg = f"[GPT FEL] {file_path}: {e}
-"
+        error_msg = f"[GPT FEL] {file_path}: {e}\n"
         print(error_msg)
         os.makedirs("logs", exist_ok=True)
         with open("logs/gpt_errors.log", "a", encoding="utf-8") as logf:
             logf.write(error_msg)
-        send_telegram_message(f"⚠️ GPT FEL i `{file_path}`:
-{e}", TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
+        send_telegram_message(f"⚠️ GPT FEL i `{file_path}`:\n{e}", TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
         return ""
 
 def handle_group(files, dry_run=False, notify=True):
@@ -180,9 +166,7 @@ def handle_group(files, dry_run=False, notify=True):
 
     for file in files:
         with open(file, "r", encoding="utf-8") as f:
-            full_code += f"
-# Fil: {file}
-" + f.read()
+            full_code += f"\n# Fil: {file}\n" + f.read()
 
         error_output = run_python_file(file)
         if error_output:
@@ -195,10 +179,7 @@ def handle_group(files, dry_run=False, notify=True):
     target_file = files[0]
     error_text = file_errors.get(target_file, "")
     if "pytest" in file_errors:
-        error_text += "
-
-[Pytest-fel]:
-" + file_errors["pytest"]
+        error_text += "\n\n[Pytest-fel]:\n" + file_errors["pytest"]
 
     refactored = refactor_code(full_code, file_path=target_file, error=error_text)
     if not refactored:
@@ -222,15 +203,9 @@ def handle_group(files, dry_run=False, notify=True):
     postcheck = verify_post_refactor(changed_files)
 
     if notify:
-        send_telegram_message("✅ Refaktorerade filer:
-" + "
-".join(changed_files) + "
-
-" + postcheck, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
+        send_telegram_message("✅ Refaktorerade filer:\n" + "\n".join(changed_files) + "\n\n" + postcheck, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)
     else:
-        print("Refaktorerade filer:
-" + "
-".join(changed_files))
+        print("Refaktorerade filer:\n" + "\n".join(changed_files))
         print(postcheck)
 
 def main():
